@@ -439,9 +439,7 @@ namespace Dalamud.Interface.Internal
             if (!File.Exists(fontPathSc))
                 ShowFontError(fontPathSc);
 
-            var chineseRangeHandle = GCHandle.Alloc(GlyphRangesChinese.GlyphRanges, GCHandleType.Pinned);
-
-            DefaultFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPathSc, 17.0f, null, chineseRangeHandle.AddrOfPinnedObject());
+            DefaultFont = ImGui.GetIO().Fonts.AddFontFromFileTTF(fontPathSc, 17.0f, null, ImGui.GetIO().Fonts.GetGlyphRangesChineseFull());
 
             var fontPathGame = Path.Combine(dalamud.AssetDirectory.FullName, "UIRes", "gamesym.ttf");
 
@@ -497,7 +495,6 @@ namespace Dalamud.Interface.Internal
             this.fontBuildSignal.Set();
 
             fontConfig.Destroy();
-            chineseRangeHandle.Free();
             gameRangeHandle.Free();
             iconRangeHandle.Free();
 
