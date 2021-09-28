@@ -41,8 +41,7 @@ namespace Dalamud.Interface.Internal.Windows
         private const int PluginIconHeight = 512;
 
         // TODO: Change back to master after release
-        // private const string MainRepoImageUrl = "https://raw.githubusercontent.com/goatcorp/DalamudPlugins/api4/{0}/{1}/images/{2}";
-        private const string MainRepoImageUrl = "https://dalamudplugins-1253720819.cos.ap-nanjing.myqcloud.com/cn-api4/plugins/{1}/images/{2}";
+        private const string MainRepoImageUrl = "https://raw.githubusercontent.com/goatcorp/DalamudPlugins/api4/{0}/{1}/images/{2}";
 
         private static readonly ModuleLog Log = new("PLUGINW");
 
@@ -1907,12 +1906,12 @@ namespace Dalamud.Interface.Internal.Windows
             var url = this.GetPluginIconUrl(manifest, isThirdParty, useTesting);
             if (url != null)
             {
-                Log.Verbose($"Downloading icon for {manifest.InternalName} from {Util.FuckGFW(url)}");
+                Log.Verbose($"Downloading icon for {manifest.InternalName} from {url}");
 
                 HttpResponseMessage data;
                 try
                 {
-                    data = await this.httpClient.GetAsync(Util.FuckGFW(url));
+                    data = await this.httpClient.GetAsync(url);
                 }
                 catch (InvalidOperationException)
                 {
@@ -2012,12 +2011,12 @@ namespace Dalamud.Interface.Internal.Windows
                 {
                     var url = urls[i];
 
-                    Log.Verbose($"Downloading image{i + 1} for {manifest.InternalName} from {Util.FuckGFW(url)}");
+                    Log.Verbose($"Downloading image{i + 1} for {manifest.InternalName} from {url}");
 
                     HttpResponseMessage data;
                     try
                     {
-                        data = await this.httpClient.GetAsync(Util.FuckGFW(url));
+                        data = await this.httpClient.GetAsync(url);
                     }
                     catch (InvalidOperationException)
                     {
