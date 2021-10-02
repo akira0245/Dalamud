@@ -59,6 +59,7 @@ namespace Dalamud.Interface.Internal.Windows
         private bool printPluginsWelcomeMsg;
         private bool autoUpdatePlugins;
         private bool doButtonsSystemMenu;
+        private bool disableRmtFiltering;
 
         #region Experimental
 
@@ -99,6 +100,7 @@ namespace Dalamud.Interface.Internal.Windows
             this.printPluginsWelcomeMsg = configuration.PrintPluginsWelcomeMsg;
             this.autoUpdatePlugins = configuration.AutoUpdatePlugins;
             this.doButtonsSystemMenu = configuration.DoButtonsSystemMenu;
+            this.disableRmtFiltering = configuration.DisableRmtFiltering;
 
             this.languages = Localization.ApplicableLangCodes.Prepend("en").ToArray();
             try
@@ -238,6 +240,9 @@ namespace Dalamud.Interface.Internal.Windows
 
             ImGui.Checkbox(Loc.Localize("DalamudSettingsSystemMenu", "Dalamud buttons in system menu"), ref this.doButtonsSystemMenu);
             ImGui.TextColored(this.hintTextColor, Loc.Localize("DalamudSettingsSystemMenuMsgHint", "Add buttons for Dalamud plugins and settings to the system menu."));
+
+            ImGui.Checkbox(Loc.Localize("DalamudSettingsDisableRmtFiltering", "Disable RMT Filtering"), ref this.disableRmtFiltering);
+            ImGui.TextColored(this.hintTextColor, Loc.Localize("DalamudSettingsDisableRmtFilteringMsgHint", "Disable dalamud's built-in RMT ad filtering."));
         }
 
         private void DrawLookAndFeelTab()
@@ -256,6 +261,15 @@ namespace Dalamud.Interface.Internal.Windows
                 ImGui.GetIO().FontGlobalScale = this.globalUiScale;
 
             ImGui.TextColored(this.hintTextColor, Loc.Localize("DalamudSettingsGlobalUiScaleHint", "Scale all XIVLauncher UI elements - useful for 4K displays."));
+
+            ImGuiHelpers.ScaledDummy(10, 16);
+
+            if (ImGui.Button(Loc.Localize("DalamudSettingsOpenStyleEditor", "Open Style Editor")))
+            {
+                Service<DalamudInterface>.Get().OpenStyleEditor();
+            }
+
+            ImGui.TextColored(this.hintTextColor, Loc.Localize("DalamudSettingsStyleEditorHint", "Modify the look & feel of Dalamud windows."));
 
             ImGuiHelpers.ScaledDummy(10, 16);
 
@@ -689,6 +703,7 @@ namespace Dalamud.Interface.Internal.Windows
             configuration.PrintPluginsWelcomeMsg = this.printPluginsWelcomeMsg;
             configuration.AutoUpdatePlugins = this.autoUpdatePlugins;
             configuration.DoButtonsSystemMenu = this.doButtonsSystemMenu;
+            configuration.DisableRmtFiltering = this.disableRmtFiltering;
 
             configuration.Save();
 

@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 using Dalamud.Configuration.Internal;
@@ -11,12 +14,14 @@ using Dalamud.Game.Internal;
 using Dalamud.Interface.Internal.ManagedAsserts;
 using Dalamud.Interface.Internal.Windows;
 using Dalamud.Interface.Internal.Windows.SelfTest;
+using Dalamud.Interface.Internal.Windows.StyleEditor;
 using Dalamud.Interface.Windowing;
 using Dalamud.Logging;
 using Dalamud.Logging.Internal;
 using Dalamud.Plugin.Internal;
 using Dalamud.Utility;
 using ImGuiNET;
+using Newtonsoft.Json;
 using PInvoke;
 using Serilog.Events;
 
@@ -39,9 +44,9 @@ namespace Dalamud.Interface.Internal
         private readonly ConsoleWindow consoleWindow;
         private readonly PluginStatWindow pluginStatWindow;
         private readonly PluginInstallerWindow pluginWindow;
-        private readonly ScratchpadWindow scratchpadWindow;
         private readonly SettingsWindow settingsWindow;
         private readonly SelfTestWindow selfTestWindow;
+        private readonly StyleEditorWindow styleEditorWindow;
 
         private ulong frameCount = 0;
 
@@ -72,9 +77,9 @@ namespace Dalamud.Interface.Internal
             this.consoleWindow = new ConsoleWindow() { IsOpen = configuration.LogOpenAtStartup };
             this.pluginStatWindow = new PluginStatWindow() { IsOpen = false };
             this.pluginWindow = new PluginInstallerWindow() { IsOpen = false };
-            this.scratchpadWindow = new ScratchpadWindow() { IsOpen = false };
             this.settingsWindow = new SettingsWindow() { IsOpen = false };
             this.selfTestWindow = new SelfTestWindow() { IsOpen = false };
+            this.styleEditorWindow = new StyleEditorWindow() { IsOpen = false };
 
             this.WindowSystem.AddWindow(this.changelogWindow);
             this.WindowSystem.AddWindow(this.colorDemoWindow);
@@ -86,15 +91,13 @@ namespace Dalamud.Interface.Internal
             this.WindowSystem.AddWindow(this.consoleWindow);
             this.WindowSystem.AddWindow(this.pluginStatWindow);
             this.WindowSystem.AddWindow(this.pluginWindow);
-            this.WindowSystem.AddWindow(this.scratchpadWindow);
             this.WindowSystem.AddWindow(this.settingsWindow);
             this.WindowSystem.AddWindow(this.selfTestWindow);
+            this.WindowSystem.AddWindow(this.styleEditorWindow);
 
             ImGuiManagedAsserts.AssertsEnabled = true;
 
             Service<InterfaceManager>.Get().Draw += this.OnDraw;
-
-            Log.Information("Windows added");
         }
 
         /// <summary>
@@ -125,7 +128,6 @@ namespace Dalamud.Interface.Internal
 
             this.creditsWindow.Dispose();
             this.consoleWindow.Dispose();
-            this.scratchpadWindow.Dispose();
         }
 
         #region Open
@@ -194,11 +196,6 @@ namespace Dalamud.Interface.Internal
         public void OpenPluginInstaller() => this.pluginWindow.IsOpen = true;
 
         /// <summary>
-        /// Opens the <see cref="ScratchpadWindow"/>.
-        /// </summary>
-        public void OpenScratchpadWindow() => this.scratchpadWindow.IsOpen = true;
-
-        /// <summary>
         /// Opens the <see cref="SettingsWindow"/>.
         /// </summary>
         public void OpenSettings() => this.settingsWindow.IsOpen = true;
@@ -207,6 +204,11 @@ namespace Dalamud.Interface.Internal
         /// Opens the <see cref="SelfTestWindow"/>.
         /// </summary>
         public void OpenSelfTest() => this.selfTestWindow.IsOpen = true;
+
+        /// <summary>
+        /// Opens the <see cref="StyleEditorWindow"/>.
+        /// </summary>
+        public void OpenStyleEditor() => this.styleEditorWindow.IsOpen = true;
 
         #endregion
 
@@ -285,11 +287,6 @@ namespace Dalamud.Interface.Internal
         public void TogglePluginInstallerWindow() => this.pluginWindow.Toggle();
 
         /// <summary>
-        /// Toggles the <see cref="ScratchpadWindow"/>.
-        /// </summary>
-        public void ToggleScratchpadWindow() => this.scratchpadWindow.Toggle();
-
-        /// <summary>
         /// Toggles the <see cref="SettingsWindow"/>.
         /// </summary>
         public void ToggleSettingsWindow() => this.settingsWindow.Toggle();
@@ -298,6 +295,11 @@ namespace Dalamud.Interface.Internal
         /// Toggles the <see cref="SelfTestWindow"/>.
         /// </summary>
         public void ToggleSelfTestWindow() => this.selfTestWindow.Toggle();
+
+        /// <summary>
+        /// Toggles the <see cref="StyleEditorWindow"/>.
+        /// </summary>
+        public void ToggleStyleEditorWindow() => this.selfTestWindow.Toggle();
 
         #endregion
 
@@ -448,6 +450,11 @@ namespace Dalamud.Interface.Internal
                             this.OpenSelfTest();
                         }
 
+                        if (ImGui.MenuItem("Open Style Editor"))
+                        {
+                            this.OpenStyleEditor();
+                        }
+
                         ImGui.Separator();
 
                         if (ImGui.MenuItem("Unload Dalamud"))
@@ -494,6 +501,39 @@ namespace Dalamud.Interface.Internal
                         if (ImGui.MenuItem("Clear focus"))
                         {
                             ImGui.SetWindowFocus(null);
+                        }
+
+                        if (ImGui.MenuItem("Dump style"))
+                        {
+                            var info = string.Empty;
+                            var style = StyleModel.Get();
+                            var enCulture = new CultureInfo("en-US");
+
+                            foreach (var propertyInfo in typeof(StyleModel).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                            {
+                                if (propertyInfo.PropertyType == typeof(Vector2))
+                                {
+                                    var vec2 = (Vector2)propertyInfo.GetValue(style);
+                                    info += $"{propertyInfo.Name} = new Vector2({vec2.X.ToString(enCulture)}f, {vec2.Y.ToString(enCulture)}f),\n";
+                                }
+                                else
+                                {
+                                    info += $"{propertyInfo.Name} = {propertyInfo.GetValue(style)},\n";
+                                }
+                            }
+
+                            info += "Colors = new Dictionary<string, Vector4>()\n";
+                            info += "{\n";
+
+                            foreach (var color in style.Colors)
+                            {
+                                info +=
+                                    $"{{\"{color.Key}\", new Vector4({color.Value.X.ToString(enCulture)}f, {color.Value.Y.ToString(enCulture)}f, {color.Value.Z.ToString(enCulture)}f, {color.Value.W.ToString(enCulture)}f)}},\n";
+                            }
+
+                            info += "},";
+
+                            Log.Information(info);
                         }
 
                         ImGui.EndMenu();
@@ -566,21 +606,6 @@ namespace Dalamud.Interface.Internal
                         ImGui.Separator();
                         ImGui.MenuItem("API Level:" + PluginManager.DalamudApiLevel, false);
                         ImGui.MenuItem("Loaded plugins:" + pluginManager.InstalledPlugins.Count, false);
-                        ImGui.EndMenu();
-                    }
-
-                    if (ImGui.BeginMenu("Scratchpad"))
-                    {
-                        if (ImGui.MenuItem("Open Scratchpad"))
-                        {
-                            this.OpenScratchpadWindow();
-                        }
-
-                        if (ImGui.MenuItem("Dispose all scratches"))
-                        {
-                            this.scratchpadWindow.Execution.DisposeAllScratches();
-                        }
-
                         ImGui.EndMenu();
                     }
 

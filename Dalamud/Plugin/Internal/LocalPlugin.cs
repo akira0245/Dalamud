@@ -8,8 +8,8 @@ using Dalamud.Game;
 using Dalamud.IoC.Internal;
 using Dalamud.Logging.Internal;
 using Dalamud.Plugin.Internal.Exceptions;
+using Dalamud.Plugin.Internal.Loader;
 using Dalamud.Plugin.Internal.Types;
-using McMaster.NETCore.Plugins;
 
 namespace Dalamud.Plugin.Internal
 {
@@ -37,17 +37,18 @@ namespace Dalamud.Plugin.Internal
         /// <param name="manifest">The plugin manifest.</param>
         public LocalPlugin(FileInfo dllFile, LocalPluginManifest? manifest)
         {
+            if (dllFile.Name == "FFXIVClientStructs.Generators.dll")
+            {
+                // Could this be done another way? Sure. It is an extremely common source
+                // of errors in the log through, and should never be loaded as a plugin.
+                Log.Error($"Not a plugin: {dllFile.FullName}");
+                throw new InvalidPluginException(dllFile);
+            }
+
             this.DllFile = dllFile;
             this.State = PluginState.Unloaded;
 
-            this.loader = PluginLoader.CreateFromAssemblyFile(
-                this.DllFile.FullName,
-                config =>
-                {
-                    config.IsUnloadable = true;
-                    config.LoadInMemory = true;
-                    config.PreferSharedTypes = true;
-                });
+            this.loader = PluginLoader.CreateFromAssemblyFile(this.DllFile.FullName, this.SetupLoaderConfig);
 
             try
             {
@@ -86,10 +87,8 @@ namespace Dalamud.Plugin.Internal
 
             var assemblyVersion = this.pluginAssembly.GetName().Version;
 
-            // Files that may or may not exist
+            // Although it is conditionally used here, we need to set the initial value regardless.
             this.manifestFile = LocalPluginManifest.GetManifestFile(this.DllFile);
-            this.disabledFile = LocalPluginManifest.GetDisabledFile(this.DllFile);
-            this.testingFile = LocalPluginManifest.GetTestingFile(this.DllFile);
 
             // If the parameter manifest was null
             if (manifest == null)
@@ -108,27 +107,31 @@ namespace Dalamud.Plugin.Internal
 
                 // Save the manifest to disk so there won't be any problems later.
                 // We'll update the name property after it can be retrieved from the instance.
-                var manifestFile = LocalPluginManifest.GetManifestFile(this.DllFile);
-                this.Manifest.Save(manifestFile);
+                this.Manifest.Save(this.manifestFile);
             }
             else
             {
                 this.Manifest = manifest;
             }
 
-            // This bit converts from ".disabled" functionality to using the manifest.
+            // This converts from the ".disabled" file feature to the manifest instead.
+            this.disabledFile = LocalPluginManifest.GetDisabledFile(this.DllFile);
             if (this.disabledFile.Exists)
             {
                 this.Manifest.Disabled = true;
                 this.disabledFile.Delete();
             }
 
-            // This bit converts from ".testing" functionality to using the manifest.
+            // This converts from the ".testing" file feature to the manifest instead.
+            this.testingFile = LocalPluginManifest.GetTestingFile(this.DllFile);
             if (this.testingFile.Exists)
             {
                 this.Manifest.Testing = true;
                 this.testingFile.Delete();
             }
+
+            var pluginManager = Service<PluginManager>.Get();
+            this.IsBanned = pluginManager.IsManifestBanned(this.Manifest);
 
             this.SaveManifest();
         }
@@ -157,7 +160,7 @@ namespace Dalamud.Plugin.Internal
         /// Gets the AssemblyName plugin, populated during <see cref="Load(PluginLoadReason, bool)"/>.
         /// </summary>
         /// <returns>Plugin type.</returns>
-        public AssemblyName AssemblyName { get; private set; } = null;
+        public AssemblyName? AssemblyName { get; private set; } = null;
 
         /// <summary>
         /// Gets the plugin name, directly from the plugin or if it is not loaded from the manifest.
@@ -175,9 +178,19 @@ namespace Dalamud.Plugin.Internal
         public bool IsDisabled => this.Manifest.Disabled;
 
         /// <summary>
+        /// Gets a value indicating whether this plugin's API level is out of date.
+        /// </summary>
+        public bool IsOutdated => this.Manifest.DalamudApiLevel < PluginManager.DalamudApiLevel;
+
+        /// <summary>
         /// Gets a value indicating whether the plugin is for testing use only.
         /// </summary>
         public bool IsTesting => this.Manifest.IsTestingExclusive || this.Manifest.Testing;
+
+        /// <summary>
+        /// Gets a value indicating whether this plugin has been banned.
+        /// </summary>
+        public bool IsBanned { get; }
 
         /// <summary>
         /// Gets a value indicating whether this plugin is dev plugin.
@@ -223,6 +236,9 @@ namespace Dalamud.Plugin.Internal
                     throw new InvalidPluginOperationException($"Unable to load {this.Name}, unload previously faulted, restart Dalamud");
             }
 
+            if (pluginManager.IsManifestBanned(this.Manifest))
+                throw new BannedPluginException($"Unable to load {this.Name}, banned");
+
             if (this.Manifest.ApplicableVersion < startInfo.GameVersion)
                 throw new InvalidPluginOperationException($"Unable to load {this.Name}, no applicable version");
 
@@ -235,16 +251,19 @@ namespace Dalamud.Plugin.Internal
             this.State = PluginState.InProgress;
             Log.Information($"Loading {this.DllFile.Name}");
 
+            if (this.DllFile.DirectoryName != null && File.Exists(Path.Combine(this.DllFile.DirectoryName, "Dalamud.dll")))
+            {
+                Log.Error("==== IMPORTANT MESSAGE TO {0}, THE DEVELOPER OF {1} ====", this.Manifest.Author, this.Manifest.InternalName);
+                Log.Error("YOU ARE INCLUDING DALAMUD DEPENDENCIES IN YOUR BUILDS!!!");
+                Log.Error("You may not be able to load your plugin. \"<Private>False</Private>\" needs to be set in your csproj.");
+                Log.Error("If you are using ILMerge, do not merge anything other than your direct dependencies.");
+                Log.Error("Do not merge FFXIVClientStructs.Generators.dll.");
+                Log.Error("Please refer to https://github.com/goatcorp/Dalamud/discussions/603 for more information.");
+            }
+
             try
             {
-                this.loader ??= PluginLoader.CreateFromAssemblyFile(
-                    this.DllFile.FullName,
-                    config =>
-                    {
-                        config.IsUnloadable = true;
-                        config.LoadInMemory = true;
-                        config.PreferSharedTypes = true;
-                    });
+                this.loader ??= PluginLoader.CreateFromAssemblyFile(this.DllFile.FullName, this.SetupLoaderConfig);
 
                 if (reloading)
                 {
@@ -255,7 +274,9 @@ namespace Dalamud.Plugin.Internal
                     {
                         var manifestFile = LocalPluginManifest.GetManifestFile(this.DllFile);
                         if (manifestFile.Exists)
+                        {
                             this.Manifest = LocalPluginManifest.Load(manifestFile);
+                        }
                     }
                 }
 
@@ -418,6 +439,15 @@ namespace Dalamud.Plugin.Internal
 
             this.Manifest.Disabled = true;
             this.SaveManifest();
+        }
+
+        private void SetupLoaderConfig(LoaderConfig config)
+        {
+            config.IsUnloadable = true;
+            config.LoadInMemory = true;
+            config.PreferSharedTypes = false;
+            config.SharedAssemblies.Add(typeof(Lumina.GameData).Assembly.GetName());
+            config.SharedAssemblies.Add(typeof(Lumina.Excel.ExcelSheetImpl).Assembly.GetName());
         }
 
         private void SaveManifest() => this.Manifest.Save(this.manifestFile);

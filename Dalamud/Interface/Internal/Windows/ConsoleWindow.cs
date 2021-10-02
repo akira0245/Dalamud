@@ -53,7 +53,7 @@ namespace Dalamud.Interface.Internal.Windows
 
             this.autoScroll = configuration.LogAutoScroll;
             this.openAtStartup = configuration.LogOpenAtStartup;
-            SerilogEventSink.Instance.OnLogLine += this.OnLogLine;
+            SerilogEventSink.Instance.LogLine += this.OnLogLine;
 
             this.Size = new Vector2(500, 400);
             this.SizeCondition = ImGuiCond.FirstUseEver;
@@ -68,7 +68,7 @@ namespace Dalamud.Interface.Internal.Windows
         /// </summary>
         public void Dispose()
         {
-            SerilogEventSink.Instance.OnLogLine -= this.OnLogLine;
+            SerilogEventSink.Instance.LogLine -= this.OnLogLine;
         }
 
         /// <summary>
@@ -222,6 +222,10 @@ namespace Dalamud.Interface.Internal.Windows
             var childDrawList = ImGui.GetWindowDrawList();
             var childSize = ImGui.GetWindowSize();
 
+            var cursorDiv = ImGuiHelpers.GlobalScale * 92;
+            var cursorLogLevel = ImGuiHelpers.GlobalScale * 100;
+            var cursorLogLine = ImGuiHelpers.GlobalScale * 135;
+
             lock (this.renderLock)
             {
                 clipper.Begin(this.LogEntries.Count);
@@ -247,15 +251,15 @@ namespace Dalamud.Interface.Internal.Windows
                         {
                             ImGui.TextUnformatted(line.TimeStamp.ToString("HH:mm:ss.fff"));
                             ImGui.SameLine();
-                            ImGui.SetCursorPosX(92);
+                            ImGui.SetCursorPosX(cursorDiv);
                             ImGui.TextUnformatted("|");
                             ImGui.SameLine();
-                            ImGui.SetCursorPosX(100);
+                            ImGui.SetCursorPosX(cursorLogLevel);
                             ImGui.TextUnformatted(this.GetTextForLogEventLevel(line.Level));
                             ImGui.SameLine();
                         }
 
-                        ImGui.SetCursorPosX(135);
+                        ImGui.SetCursorPosX(cursorLogLine);
                         ImGui.TextUnformatted(line.Line);
                     }
                 }
@@ -273,7 +277,8 @@ namespace Dalamud.Interface.Internal.Windows
             }
 
             // Draw dividing line
-            childDrawList.AddLine(new Vector2(childPos.X + 127, childPos.Y), new Vector2(childPos.X + 127, childPos.Y + childSize.Y), 0x4FFFFFFF, 1.0f);
+            var offset = ImGuiHelpers.GlobalScale * 127;
+            childDrawList.AddLine(new Vector2(childPos.X + offset, childPos.Y), new Vector2(childPos.X + offset, childPos.Y + childSize.Y), 0x4FFFFFFF, 1.0f);
 
             ImGui.EndChild();
 
@@ -416,6 +421,9 @@ namespace Dalamud.Interface.Internal.Windows
 
         private void AddAndFilter(string line, LogEventLevel level, DateTimeOffset offset, bool isMultiline)
         {
+            if (line.StartsWith("TROUBLESHOOTING:") || line.StartsWith("LASTEXCEPTION:"))
+                return;
+
             var entry = new LogEntry
             {
                 IsMultiline = isMultiline,
@@ -476,7 +484,7 @@ namespace Dalamud.Interface.Internal.Windows
             _ => throw new ArgumentOutOfRangeException(level.ToString(), "Invalid LogEventLevel"),
         };
 
-        private void OnLogLine(object sender, (string Line, LogEventLevel Level, DateTimeOffset Offset) logEvent)
+        private void OnLogLine(object sender, (string Line, LogEventLevel Level, DateTimeOffset Offset, Exception? Exception) logEvent)
         {
             this.HandleLogLine(logEvent.Line, logEvent.Level, logEvent.Offset);
         }
